@@ -312,7 +312,27 @@ SQLite 回读：3 表 3 索引 + world 1 行 + positions 8 行 + events 245 行
 | 15 | 04 冒烟测试「通过」但页面不是自己的 | 项目名全局唯一，真实域名是 `ai-town-cbn.pages.dev`；`ai-town.pages.dev` 是**别人的**项目 → 只测状态码会 200 假通过；修：逐个候选 + 校验页面标题 |
 
 下一步（M1 已上线）：进 **M2（接 DeepSeek：日程 + 相遇对话 + 气泡）**；
-顺带可选项：给 `ai-town` 加域名换掉 quick tunnel、`~/ai-town` 做 `git init`。
+顺带可选项：给 `ai-town` 加域名换掉 quick tunnel、给 runner 加 `aitown-engine` 标签把 CI 打开。
+仓库：https://github.com/WongPuiYan/ai-town （public，仅代码与文档，无密钥）
+
+### 🔑 凭据与 CI（本仓库 **public**，代码里不放任何密钥）
+
+**本地**：`~/.hermes/.env`（600）存 `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` / `DEEPSEEK_API_KEY`；
+引擎侧 `engine.env`（600）存 `AITOWN_EDGE_TOKEN`。两类文件都**不进版本库**（见 `.gitignore`）。
+`deploy/lib.sh` 不再硬编码账号 ID：读不到就 `die`，宁可失败也不要用错账号去部署。
+
+**GitHub Secrets**（Settings → Secrets and variables → Actions）：
+
+| Secret | 用途 | 本地来源 |
+|---|---|---|
+| `CLOUDFLARE_API_TOKEN` | wrangler 部署 / quota-check | `~/.hermes/.env` |
+| `CLOUDFLARE_ACCOUNT_ID` | 同上 | `~/.hermes/.env` |
+| `DEEPSEEK_API_KEY` | M2 起引擎调 LLM | `~/.hermes/.env` |
+
+**CI 现状（尚未启用）**：`deploy.yml` 的 engine job 要 self-hosted runner 标签 `aitown-engine`，
+而本机 runner 只注册在 `WongPuiYan/other-repo-runner`（标签 `peer-service`）→ 首次 push 的运行会一直 `queued`。
+启用三步：① 给本机 runner 加 `aitown-engine` 标签（或另注册一个）② 配置上表 3 个 Secrets ③（可选）加带审批的 Environment。
+远程管理 CI 需要 PAT 具备 `Actions: Read and write` + `Secrets: Read and write`（当前 fine-grained token 无此权限 → 403）。
 
 ### 部署顺序（幂等，可重复跑）
 
