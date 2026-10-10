@@ -5,11 +5,12 @@
 set -euo pipefail
 
 # ---------- 常量 ----------
-# ⚠️ 账号 ID【不】写死在代码里（本仓库 public）：从 ~/.hermes/.env 读，
+# ⚠️ 账号 ID【不】写死在代码里（本仓库 public）：从本机密钥文件读，
 #    或由 CI 通过 GitHub Secrets 注入（CLOUDFLARE_ACCOUNT_ID）。
 readonly PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly STATE_FILE="${PROJECT_ROOT}/deploy/.state.env"
-readonly HERMES_ENV="${HOME}/.hermes/.env"
+# 本机密钥文件（CF token / DeepSeek key）：默认 $HOME/.hermes/.env，路径不同可用 AITOWN_SECRETS_ENV 覆盖
+readonly HERMES_ENV="${AITOWN_SECRETS_ENV:-${HOME}/.hermes/.env}"
 
 readonly ENGINE_PORT="8080"
 readonly EDGE_NAME="aitown-edge"
@@ -45,7 +46,7 @@ die()  { printf '%s[FAIL]%s %s\n' "$C_RED" "$C_OFF" "$*" >&2; exit 1; }
 step() { printf '\n%s══ %s ══%s\n' "$C_BLU" "$*" "$C_OFF"; }
 
 # ---------- 凭据 ----------
-# 优先级：已导出的环境变量 > ~/.hermes/.env
+# 优先级：已导出的环境变量 > 本机密钥文件
 # 绝不 echo 出 token 本身
 load_cf_token() {
   if [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
@@ -53,12 +54,12 @@ load_cf_token() {
   elif [[ -f "$HERMES_ENV" ]] && grep -q '^CLOUDFLARE_API_TOKEN=' "$HERMES_ENV"; then
     # shellcheck disable=SC1090
     set -a; source <(grep -E '^(CLOUDFLARE_API_TOKEN|CLOUDFLARE_ACCOUNT_ID)=' "$HERMES_ENV"); set +a
-    ok "CLOUDFLARE_API_TOKEN 来自 ~/.hermes/.env"
+    ok "CLOUDFLARE_API_TOKEN 来自 ${HERMES_ENV}"
   else
-    die "找不到 CLOUDFLARE_API_TOKEN。请执行：echo 'CLOUDFLARE_API_TOKEN=xxx' >> ~/.hermes/.env"
+    die "找不到 CLOUDFLARE_API_TOKEN。请执行：echo 'CLOUDFLARE_API_TOKEN=xxx' >> ${HERMES_ENV}"
   fi
   # 账号 ID 同样不硬编码（见文件头常量说明）
-  [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]] || die "找不到 CLOUDFLARE_ACCOUNT_ID。请执行：echo 'CLOUDFLARE_ACCOUNT_ID=xxx' >> ~/.hermes/.env（CI 里用 GitHub Secrets）"
+  [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]] || die "找不到 CLOUDFLARE_ACCOUNT_ID。请执行：echo 'CLOUDFLARE_ACCOUNT_ID=xxx' >> ${HERMES_ENV}（CI 里用 GitHub Secrets）"
   log "Account ID: ${CLOUDFLARE_ACCOUNT_ID:0:8}…（截断显示）"
 }
 

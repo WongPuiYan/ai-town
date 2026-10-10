@@ -96,7 +96,7 @@ import sys, json; print((json.load(sys.stdin).get('result') or {}).get('id',''))
   save_state "TUNNEL_ID" "$TUNNEL_ID"
   save_state "TUNNEL_DOMAIN" "$DOMAIN"
 
-  step "5.2.2  配置 ingress（独立 tunnel，不与 peer-service 共用）"
+  step "5.2.2  配置 ingress（独立 tunnel，不与同机其它项目的 ingress 共用）"
   RESP=$(cf_api PUT "/accounts/${CLOUDFLARE_ACCOUNT_ID}/cfd_tunnel/${TUNNEL_ID}/configurations" \
     "{\"config\":{\"ingress\":[{\"hostname\":\"${DOMAIN}\",\"service\":\"http://localhost:${ENGINE_PORT}\"},{\"service\":\"http_status:404\"}]}}")
   cf_ok "$RESP" "ingress 配置" && ok "ingress 已指向 localhost:${ENGINE_PORT}"
@@ -226,10 +226,10 @@ sync_url() {
       done
     fi
     # systemd 拉起的进程没有 CF 凭据：只挑这两行加载，不整文件 source。
-    # 账号 ID / Token 都放 ~/.hermes/.env（不进版本库；CI 里走 GitHub Secrets）。
-    set -a; source <(grep -E '^(CLOUDFLARE_API_TOKEN|CLOUDFLARE_ACCOUNT_ID)=' "${HOME}/.hermes/.env" 2>/dev/null); set +a
+    # 账号 ID / Token 都放本机密钥文件（不进版本库；CI 里走 GitHub Secrets）。
+    set -a; source <(grep -E '^(CLOUDFLARE_API_TOKEN|CLOUDFLARE_ACCOUNT_ID)=' "${AITOWN_SECRETS_ENV:-${HOME}/.hermes/.env}" 2>/dev/null); set +a
     if [[ -z "${CLOUDFLARE_ACCOUNT_ID:-}" || -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
-      echo "[$LOG_TAG] 缺少 CF 凭据（CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN 应在 ~/.hermes/.env）→ 跳过 Worker 重部署"
+      echo "[$LOG_TAG] 缺少 CF 凭据（CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN 应在本机密钥文件）→ 跳过 Worker 重部署"
       return
     fi
     REDEPLOY_LOG="$(dirname "$0")/worker-redeploy.log"
@@ -240,7 +240,7 @@ sync_url() {
 }
 
 # ⚠️ 必须显式给 --config：cloudflared 默认会读 ~/.cloudflared/config.yml，
-# 而那个文件里的 ingress（peer-service → 127.0.0.1:7360）会盖掉 --url，
+# 而那个文件里的 catch-all ingress（指向同机另一个本地服务）会盖掉 --url，
 # 于是新 quick tunnel 的全部请求都被转发到 7360（2026-10-10 实测踩到，
 # 表现为「URL 通了但返回别人的页面」）。空配置即屏蔽。
 CFG="$(dirname "$0")/cloudflared-aitown-empty.yml"
@@ -287,10 +287,12 @@ EOF
 fi
 
 step "5.3  确认没影响现有隧道"
-if systemctl is-active --quiet cloudflared-peer; then
-  ok "cloudflared-peer 仍正常（两条隧道互相独立）"
+if [[ -n "${AITOWN_PEER_SERVICES:-}" ]]; then
+  for s in ${AITOWN_PEER_SERVICES}; do
+    systemctl is-active --quiet "$s" && ok "$s 仍正常（两条隧道互相独立）" || warn "⚠️ $s 异常，请检查"
+  done
 else
-  warn "⚠️ cloudflared-peer 异常，请检查"
+  log "未指定 AITOWN_PEER_SERVICES，跳过同机服务复查"
 fi
 
 echo

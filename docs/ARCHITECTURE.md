@@ -29,7 +29,7 @@
 | # | 约束 | 实测值 | 推论 |
 |---|---|---|---|
 | A | 服务器规格 | 2 核 / 2GB / 可用内存 ~1.1GB / 无 Docker | 引擎必须单二进制、内存 < 200MB |
-| B | 同机已有负载 | 常驻网关 + peer-service + GitHub Runner | 引擎内存预算压到 120MB |
+| B | 同机已有负载 | 若干常驻服务（网关 / 媒体服务 / CI Runner） | 引擎内存预算压到 120MB |
 | C | Cloudflare 只用免费档 | Free 计划 | 见下方红线 |
 | D | LLM 必须外调 | 本机跑不动任何模型 | 走 DeepSeek API + CF Workers AI |
 | E | 出口网络 | 公网可达 CF/DeepSeek，内网 ikas 代理不可达 | 公网 API 是唯一选项 |
@@ -68,7 +68,7 @@
 └───────────────────────┬───────────────────────────────┘
                         │ cloudflared 出站隧道
                         │ （服务器不开任何公网端口）
-┌───────────────────────▼──── 云服务商 2C2G / systemd ────┐
+┌───────────────────────▼──── 云主机 2C2G / systemd ────┐
 │  aitown-engine  (Go 单二进制, 目标 RSS ≈ 120MB)        │
 │  ┌──────────────────────────────────────────────────┐ │
 │  │ ① Tick Scheduler  1s/拍，支持 暂停 / 1x / 4x / 回放│ │
@@ -450,7 +450,7 @@ conversations —— 对话记录（前端"回看聊天"）
 
 引擎**只绑 `127.0.0.1:8080`**，不开任何公网端口。入口只有一条 cloudflared 出站隧道。
 
-现有资源：一条 named tunnel `<other-tunnel-uuid>`（服务 peer-service）。
+现有资源：本机已有一条 named tunnel，服务的是同机另一个项目（与本项目无关）。
 
 两种模式（取决于你是否有域名）：
 
@@ -460,7 +460,7 @@ conversations —— 对话记录（前端"回看聊天"）
 | **B. Quick tunnel** | 无域名 | URL 每次重启变，需 tunnel-monitor 自动同步到 Worker 环境变量 |
 
 > ⚠️ **已知限制**：named tunnel **无 DNS 路由时不可外部访问**（`cfargotunnel.com` 需要 CNAME）。这是你之前踩过的坑。
-> **推荐**：给 ai-town 单独建一条 tunnel（不要和 peer-service 共用，避免一个挂两个都挂），ingress 指向 `localhost:8080`。
+> **推荐**：给 ai-town 单独建一条 tunnel（不要和同机其它项目共用 ingress，避免一个挂两个都挂），ingress 指向 `localhost:8080`。
 
 ---
 
@@ -492,7 +492,7 @@ ai-town/
 
 **部署顺序：edge → engine → frontend**（前端要连 edge；edge 要连 engine）。
 
-**CI/CD**：GitHub Actions。服务器侧用 **self-hosted runner**，不要用 SSH —— SSH 从 GitHub IP 段发起会触发云服务商安全告警（你已在 peer-service 上踩过这个坑）。
+**CI/CD**：GitHub Actions。服务器侧用 **self-hosted runner**，不要用 SSH —— SSH 从 GitHub 的 IP 段发起会被云厂商安全组判为异常登录并告警（已有先例）。
 
 ---
 
@@ -543,19 +543,19 @@ ai-town/
 ## 附录 B：环境实测记录
 
 ```
-主机      <cloud-host>  Linux 6.8.0-71-generic  x86_64
+主机      <云主机>  Linux 6.8 x86_64（主机名等机器细节不写进公开仓库）
 CPU       2 vCPU
-内存      1.9GB total / 888MB used / 1.1GB available
-Swap      1.9GB (已用 360MB)
-磁盘      50GB total / 19GB available (62% used)
+内存      2GB（扣掉系统与常驻服务后可用约 1GB）
+Swap      已开启（OOM 缓冲）
+磁盘      50GB（余量约 20GB）
 Node      v24.14.0   npm 11.9.0   pnpm 10.30.2
 Python    3.11.15
 Go        ✗ 未安装（部署脚本会装）
 Docker    ✗ 未安装（本方案不需要）
-wrangler  4.99.0（CLOUDFLARE_API_TOKEN 已配置，账号 ID 见 `~/.hermes/.env`）
-cloudflared 已装，named tunnel <other-tunnel-uuid> → localhost:7360 (peer-service)
-在跑服务  peer-gateway / peer-service / cloudflared-peer
-          / actions.runner.other-repo-runner / sub-proxy(3X-UI) / tailscaled / fail2ban
+wrangler  4.99.0（CLOUDFLARE_API_TOKEN / ACCOUNT_ID 由本机密钥文件提供，见 deploy/lib.sh）
+cloudflared 已装（既有的隧道配置不在同一账号下 → 05 脚本用 --config 指空配置，绕开默认 ingress）
+在跑服务  同机其它常驻服务（名字不写进公开仓库，用 AITOWN_PEER_SERVICES 声明）
+          / actions.runner.<其它仓库> / 代理面板 / tailscaled / fail2ban
 公网出口  api.cloudflare.com ✓ 200    api.deepseek.com ✓ 401(可达)
 ```
 

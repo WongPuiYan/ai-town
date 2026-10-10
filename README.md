@@ -59,7 +59,6 @@ cd ~/ai-town
 
 > ⚠️ **账号下 0 个域名** → `05-tunnel-setup.sh` 会自动落到 **quick tunnel 模式**（URL 每次重启变，
 > 需自动同步进 Worker 环境变量）。要用 named tunnel 得先在 CF 添加一个域名。
-> 另：本机 cloudflared 配置指向的 `<other-tunnel-uuid>`（peer-service）**不在此账号下**，本账号只有 1 条 `wk-tunnel`（<this-tunnel-uuid>）。
 
 下一步：**M1 已上线 Cloudflare**（2026-10-10），公开可访问：
 
@@ -161,7 +160,7 @@ ai-town/
 
 ## 关键约束（违反会静默失败）
 
-- **服务器 2GB 内存**，与 Hermes / peer-service 同机 → 引擎 `MemoryMax=600M`
+- **部署机内存小（2GB）且与其它常驻服务同机** → 引擎 `MemoryMax=600M`，用完即让位
 - 🩸 **前端禁止轮询，只走 WebSocket** → WS 消息经 Worker 转发不计请求数；1 秒轮询 = 86,400 请求/天/观众，免费额度只够 1.1 个观众
 - **不用 Durable Objects** → 与服务器引擎职责重复（不是用不起，见架构 §5.4.3）
 - **Worker CPU 只有 10ms** → edge 层只转发，禁止加计算

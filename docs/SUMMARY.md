@@ -21,8 +21,8 @@
 
 | # | 约束 | 实测值 | 推论 |
 |---|---|---|---|
-| A | 服务器 | 2 核 / 1.9GB，**可用仅 ~1.1GB**，无 Docker | 引擎必须单二进制、内存 < 200MB |
-| B | 同机负载 | 常驻网关 + peer-service + GitHub Runner | 引擎内存预算压到 **120MB** |
+| A | 服务器 | 2 核 / 2GB，**扣掉常驻服务后可用约 1GB**，无 Docker | 引擎必须单二进制、内存 < 200MB |
+| B | 同机负载 | 若干常驻服务（网关 / 媒体服务 / CI Runner） | 引擎内存预算压到 **120MB** |
 | C | Cloudflare 只用免费档 | Free 计划 | 见下方四条红线 |
 | D | LLM 必须外调 | 本机跑不动模型 | DeepSeek API + Workers AI |
 | E | 出口网络 | 公网可达 CF/DeepSeek，**内网 ikas 代理不可达** | 只能走公网 API |
@@ -50,7 +50,7 @@
                 /api/history  直读 D1（历史事件，不消耗服务器）
                 /ws           WebSocket 透传到引擎
               ↓ cloudflared 出站隧道（服务器不开任何公网端口）
-            云服务商 2C2G  systemd
+            云主机 2C2G  systemd
               aitown-engine（Go 单二进制，目标 RSS ≈ 120MB）
                 ① Tick Scheduler  1s/拍，暂停 / 1x / 4x / 回放
                 ② World State     内存网格 + 实体表（零拷贝读）
@@ -180,7 +180,7 @@ tick 线程 ──publish──► taskQueue(buffered chan, cap 256) ──► 4
 | B. Quick tunnel | 无域名 | URL 每次重启变，需 monitor 自动同步 |
 
 > ⚠️ **已知坑**：named tunnel **没有 DNS 路由时无法外部访问**（`cfargotunnel.com` 需要 CNAME）。
-> **建议给 ai-town 单独建一条 tunnel**，不要和 peer-service 共用（避免一个挂两个都挂）。
+> **建议给 ai-town 单独建一条 tunnel**，不要和同机其它项目共用 ingress（避免一个挂两个都挂）。
 
 ---
 
@@ -240,7 +240,7 @@ SQLite 回读：3 表 3 索引 + world 1 行 + positions 8 行 + events 245 行
 ├── frontend/{index.html,src/main.ts,vite.config.ts}
 ├── scripts/m1-verify.mjs            ← 验收脚本
 ├── bin/aitown · data/aitown.db · logs/   ← 运行时产物（git 忽略）
-└── .github/workflows/deploy.yml     self-hosted runner（不用 SSH，避免云服务商告警）
+└── .github/workflows/deploy.yml     self-hosted runner（不用 SSH，避免云厂商异常登录告警）
 ```
 
 脚本行为约定：能做的都做，遇到还没写的业务代码**明确提示并跳过，不假装成功**。
@@ -282,8 +282,8 @@ SQLite 回读：3 表 3 索引 + world 1 行 + positions 8 行 + events 245 行
 > `quota-check.sh` 另因给 `readonly` 变量 `EMBED_DIMS` 重复赋值而崩在第 16 行（从未跑通），也已修。
 
 > ⚠️ **账号下 0 个域名** → `05-tunnel-setup.sh` 会落到 **quick tunnel 模式**（URL 每次重启变，需自动同步进 Worker）；
-> 要 named tunnel 得先在 CF 添加域名。本机 cloudflared 配置指向的 `<other-tunnel-uuid>`（peer-service）
-> **不在此账号下**，本账号只有 1 条 `wk-tunnel`（<this-tunnel-uuid>）。
+> 要 named tunnel 得先在 CF 添加域名。本机既有的 cloudflared 配置**不属于本账号**（服务同机另一项目），
+> 所以 05 脚本必须 `--config` 指向空配置，否则默认 ingress 会把 quick tunnel 也转发过去。
 
 ### ✅ M1 已上线 Cloudflare（2026-10-10）
 
@@ -305,7 +305,7 @@ SQLite 回读：3 表 3 索引 + world 1 行 + positions 8 行 + events 245 行
 | 8 | 引擎永远 401 | `02` 每次 `openssl rand` 生成 `EDGE_SHARED_TOKEN`，与引擎 `AITOWN_EDGE_TOKEN` 永不相等 → 单一真相源：`ensure_edge_token()` 从 `engine.env` 取同一个值 |
 | 9 | `03` 跑出 `deepseek-chat: command not found` | 未加引号的 heredoc 里，注释中的反引号被当命令执行 → 去掉反引号 |
 | 10 | `curl` 带 token 反而 400 | 口令被写了两行（值相同），`$(grep)` 取到多行 → header 畸形；修：先 `ensure_edge_token` 再判断补写 |
-| 11 | quick tunnel URL 通了，返回的却是 peer-service 页面 | **cloudflared 默认读 `~/.cloudflared/config.yml`**，里面的 ingress 覆盖 `--url` → 显式 `--config deploy/cloudflared-aitown-empty.yml` |
+| 11 | quick tunnel URL 通了，返回的却是同机另一服务的页面 | **cloudflared 默认读 `~/.cloudflared/config.yml`**，里面的 ingress 覆盖 `--url` → 显式 `--config deploy/cloudflared-aitown-empty.yml` |
 | 12 | Worker `/api/*` 全 404，日志 `No bindings found.` | 仓库根还有个 `wrangler.jsonc`（assets→frontend），wrangler 向上搜到它 → 以静态资源模式部署同名 Worker，覆盖带 bindings 的版本；修：`--config edge/wrangler.toml` + 根配置挪去 `deploy/attic/` |
 | 13 | 隧道重启后页面永远「重连中」 | 生成脚本里 `\$HOME`/`\${HOME}` 过度转义（带引号 heredoc 中 `\$` 是字面量）→ CF 凭据没加载、npx 兜底失效、Worker 部署静默失败；修：写成运行时原样 + 输出重定向到 `deploy/worker-redeploy.log` |
 | 14 | 同上（部署失败） | systemd 的 PATH 里没有 nvm 的 node/npx → unit 加 `Environment=PATH=<nvm>/bin:…`，脚本内再兜底扫 `~/.nvm/versions/node/*/bin` |
@@ -317,7 +317,8 @@ SQLite 回读：3 表 3 索引 + world 1 行 + positions 8 行 + events 245 行
 
 ### 🔑 凭据与 CI（本仓库 **public**，代码里不放任何密钥）
 
-**本地**：`~/.hermes/.env`（600）存 `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` / `DEEPSEEK_API_KEY`；
+**本地**：本机密钥文件（默认 `$HOME/.hermes/.env`，600，可用 `AITOWN_SECRETS_ENV` 覆盖）存
+`CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` / `DEEPSEEK_API_KEY`；
 引擎侧 `engine.env`（600）存 `AITOWN_EDGE_TOKEN`。两类文件都**不进版本库**（见 `.gitignore`）。
 `deploy/lib.sh` 不再硬编码账号 ID：读不到就 `die`，宁可失败也不要用错账号去部署。
 
@@ -325,12 +326,13 @@ SQLite 回读：3 表 3 索引 + world 1 行 + positions 8 行 + events 245 行
 
 | Secret | 用途 | 本地来源 |
 |---|---|---|
-| `CLOUDFLARE_API_TOKEN` | wrangler 部署 / quota-check | `~/.hermes/.env` |
-| `CLOUDFLARE_ACCOUNT_ID` | 同上 | `~/.hermes/.env` |
-| `DEEPSEEK_API_KEY` | M2 起引擎调 LLM | `~/.hermes/.env` |
+| `CLOUDFLARE_API_TOKEN` | wrangler 部署 / quota-check | 本机密钥文件 |
+| `CLOUDFLARE_ACCOUNT_ID` | 同上 | 本机密钥文件 |
+| `DEEPSEEK_API_KEY` | M2 起引擎调 LLM | 本机密钥文件 |
+| `PEER_SERVICES`（**变量**，非 secret） | CI 回归验证点名的同机服务名 | 部署机自定 |
 
 **CI 现状（尚未启用）**：`deploy.yml` 的 engine job 要 self-hosted runner 标签 `aitown-engine`，
-而本机 runner 只注册在 `WongPuiYan/other-repo-runner`（标签 `peer-service`）→ 首次 push 的运行会一直 `queued`。
+而部署机上现有的 self-hosted runner 只注册在**别的仓库**（标签不匹配）→ 首次 push 的运行会一直 `queued`。
 启用三步：① 给本机 runner 加 `aitown-engine` 标签（或另注册一个）② 配置上表 3 个 Secrets ③（可选）加带审批的 Environment。
 远程管理 CI 需要 PAT 具备 `Actions: Read and write` + `Secrets: Read and write`（当前 fine-grained token 无此权限 → 403）。
 

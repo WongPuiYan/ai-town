@@ -1,7 +1,7 @@
 name: deploy-ai-town
 
 # 为什么用 self-hosted runner 而不是 SSH：
-# 云服务商安全组 + 云镜对「外部 SSH 登录」会触发安全告警，
+# 从 GitHub 的 IP 段发起 SSH 登录，会被云厂商安全组 / 主机安全 agent 判为异常登录并告警；
 # 用 self-hosted runner 让服务器主动拉取任务，完全不暴露登录入口。
 on:
   push:
@@ -56,9 +56,13 @@ jobs:
           curl -fsS -m 10 http://127.0.0.1:8080/health
           echo "引擎健康 ✓"
 
-      - name: 回归验证（确认同机服务未受影响）
+      - name: 回归验证（确认同机其它服务未受影响）
+        env:
+          # 同机常驻服务名由仓库变量提供，不写进本仓库（见 docs/SUMMARY.md）
+          PEERS: ${{ vars.PEER_SERVICES }}
         run: |
-          for s in peer-gateway peer-service; do
+          for s in $PEERS; do
+            [ -n "$s" ] || continue
             systemctl is-active --quiet "$s" || { echo "::error::$s 挂了"; exit 1; }
           done
           echo "同机服务正常 ✓"

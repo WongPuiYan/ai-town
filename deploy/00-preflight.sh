@@ -120,19 +120,29 @@ check_url "Workers AI 端点"   "https://api.cloudflare.com/client/v4/accounts/$
 if [[ -n "${DEEPSEEK_API_KEY:-}" ]] || grep -q '^DEEPSEEK_API_KEY=' "$HERMES_ENV" 2>/dev/null; then
   ok "DEEPSEEK_API_KEY 已配置"
 else
-  note_fail "缺少 DEEPSEEK_API_KEY —— 引擎无法生成对话。加到 ~/.hermes/.env"
+  note_fail "缺少 DEEPSEEK_API_KEY —— 引擎无法生成对话。加到本机密钥文件（默认 $HOME/.hermes/.env）"
 fi
 
 step "6/6  已有服务影响面"
-for s in peer-gateway peer-service cloudflared-peer tailscaled fail2ban; do
-  if systemctl is-active --quiet "$s" 2>/dev/null; then
-    ok "$s 运行中（部署后需回归验证）"
-  else
-    log "$s 未运行"
-  fi
-done
-log "cloudflared 现有 tunnel 配置："
-[[ -f "${HOME}/.cloudflared/config.yml" ]] && sed 's/^/       /' "${HOME}/.cloudflared/config.yml" || warn "未找到 ~/.cloudflared/config.yml"
+# 同机常驻服务名不进版本库：用 AITOWN_PEER_SERVICES（空格分隔）声明，部署后回归点名
+if [[ -n "${AITOWN_PEER_SERVICES:-}" ]]; then
+  for s in ${AITOWN_PEER_SERVICES}; do
+    if systemctl is-active --quiet "$s" 2>/dev/null; then
+      ok "$s 运行中（部署后需回归验证）"
+    else
+      log "$s 未运行"
+    fi
+  done
+else
+  log "未指定 AITOWN_PEER_SERVICES，跳过同机服务点名（可 export AITOWN_PEER_SERVICES=\"svc-a svc-b\" 重跑）"
+fi
+# 已有 cloudflared 配置只查存在性，不打印内容（里面含其它项目的主机名/ingress）
+if [[ -f "${HOME}/.cloudflared/config.yml" ]]; then
+  ok "存在 ~/.cloudflared/config.yml"
+  warn "注意：它的 catch-all ingress 会盖掉 cloudflared --url，务必用 --config 指向空配置"
+else
+  log "未找到 ~/.cloudflared/config.yml"
+fi
 
 step "结果"
 if (( FAIL == 0 )); then

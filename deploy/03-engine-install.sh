@@ -7,8 +7,11 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 ENGINE_DIR="${PROJECT_ROOT}/engine"
-ENGINE_BIN="$HOME/ai-town/bin/aitown"
-DATA_DIR="$HOME/ai-town/data"
+# 部署机的运行期目录：默认 $HOME/ai-town，可用 AITOWN_HOME 覆盖（不写死具体家目录）
+AITOWN_HOME="${AITOWN_HOME:-${HOME}/ai-town}"
+ENGINE_BIN="${AITOWN_HOME}/bin/aitown"
+DATA_DIR="${AITOWN_HOME}/data"
+LOGS_DIR="${AITOWN_HOME}/logs"
 UNIT="/etc/systemd/system/aitown-engine.service"
 RUN_AS="$(id -un)"
 
@@ -52,14 +55,14 @@ fi
 
 # ------------------------------------------------------------------ 目录
 step "3.3  创建目录结构"
-for d in "$DATA_DIR" "$(dirname "$ENGINE_BIN")" "$HOME/ai-town/logs"; do
+for d in "$DATA_DIR" "$(dirname "$ENGINE_BIN")" "$LOGS_DIR"; do
   mkdir -p "$d" && ok "目录就绪 $d"
 done
 chmod 750 "$DATA_DIR"; ok "data 目录权限收紧为 750（含 Agent 记忆，属敏感数据）"
 
 # ---------------------------------------------------------------- 环境文件
 step "3.4  引擎环境文件"
-ENV_FILE="$HOME/ai-town/engine.env"
+ENV_FILE="${AITOWN_HOME}/engine.env"
 if [[ ! -f "$ENV_FILE" ]]; then
   load_cf_token 2>/dev/null || true
   cat > "$ENV_FILE" <<EOF
@@ -149,10 +152,10 @@ step "3.6  systemd unit"
 sudo tee "$UNIT" >/dev/null <<EOF
 [Unit]
 Description=AI Town Simulation Engine (tick loop + agent runtime)
-Documentation=file://$HOME/ai-town/docs/ARCHITECTURE.md
+Documentation=file://${PROJECT_ROOT}/docs/ARCHITECTURE.md
 After=network-online.target
 Wants=network-online.target
-# 与 peer-service / hermes 共存，互为独立服务
+# 与同机其它常驻服务共存，互为独立服务
 Conflicts=
 
 [Service]
@@ -160,7 +163,7 @@ Type=simple
 User=${RUN_AS}
 Group=${RUN_AS}
 WorkingDirectory=${DATA_DIR}
-EnvironmentFile=$HOME/ai-town/engine.env
+EnvironmentFile=${ENV_FILE}
 
 # 只绑本地，公网入口只有 cloudflared 隧道
 ExecStart=${ENGINE_BIN}
@@ -171,13 +174,13 @@ RestartSec=5
 TimeoutStopSec=30
 KillSignal=SIGTERM
 
-# ── 资源护栏（关键：2GB 机器的保命设置）──────────────────
+# ── 资源护栏（关键：小内存机器的保命设置）──────────────────
 # Go GC 目标软上限。超过后 GC 会疯狂跑而不是撑爆内存
 Environment=GOMEMLIMIT=150MiB
 # 到 400M 开始节流（回收 page cache / 降速），到 600M 才 OOM kill
 MemoryHigh=400M
 MemoryMax=600M
-# CPU 让位给 Hermes / peer-service
+# CPU 让位给同机其它常驻服务
 CPUWeight=50
 Nice=5
 
@@ -186,13 +189,13 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=${DATA_DIR} $HOME/ai-town/logs
+ReadWritePaths=${DATA_DIR} ${LOGS_DIR}
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 LimitNOFILE=8192
 
 # ── 日志 ──────────────────────────────────────────────────
-StandardOutput=append:$HOME/ai-town/logs/engine.log
-StandardError=append:$HOME/ai-town/logs/engine.err.log
+StandardOutput=append:${LOGS_DIR}/engine.log
+StandardError=append:${LOGS_DIR}/engine.err.log
 SyslogIdentifier=aitown-engine
 
 [Install]
@@ -200,9 +203,9 @@ WantedBy=multi-user.target
 EOF
 ok "unit 已写入 ${UNIT}"
 
-log "设置日志轮转（防止日志把 19GB 磁盘吃光）..."
-sudo tee /etc/logrotate.d/aitown >/dev/null <<'EOF'
-$HOME/ai-town/logs/*.log {
+log "设置日志轮转（防止日志把磁盘吃满）..."
+sudo tee /etc/logrotate.d/aitown >/dev/null <<EOF
+${LOGS_DIR}/*.log {
     daily
     rotate 7
     maxsize 50M
@@ -240,9 +243,13 @@ fi
 
 # ---------------------------------------------------------------- 回归验证
 step "3.8  同机服务回归验证（确认没被影响）"
-for s in peer-gateway peer-service cloudflared-peer; do
-  if systemctl is-active --quiet "$s"; then ok "$s 仍正常"; else warn "⚠️ $s 异常！请立即检查"; fi
-done
+if [[ -n "${AITOWN_PEER_SERVICES:-}" ]]; then
+  for s in ${AITOWN_PEER_SERVICES}; do
+    if systemctl is-active --quiet "$s"; then ok "$s 仍正常"; else warn "⚠️ $s 异常！请立即检查"; fi
+  done
+else
+  log "未指定 AITOWN_PEER_SERVICES，跳过同机服务点名"
+fi
 log "整机内存：$(free -m | awk '/Mem:/{print $3" MB 已用 / "$2" MB 总量"}')"
 
 ok "下一步：05-tunnel-setup.sh（暴露到公网）"
