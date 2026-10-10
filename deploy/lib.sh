@@ -5,7 +5,8 @@
 set -euo pipefail
 
 # ---------- 常量 ----------
-readonly CF_ACCOUNT_ID_DEFAULT="<cf-account-id>"
+# ⚠️ 账号 ID【不】写死在代码里（本仓库 public）：从 ~/.hermes/.env 读，
+#    或由 CI 通过 GitHub Secrets 注入（CLOUDFLARE_ACCOUNT_ID）。
 readonly PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly STATE_FILE="${PROJECT_ROOT}/deploy/.state.env"
 readonly HERMES_ENV="${HOME}/.hermes/.env"
@@ -56,8 +57,9 @@ load_cf_token() {
   else
     die "找不到 CLOUDFLARE_API_TOKEN。请执行：echo 'CLOUDFLARE_API_TOKEN=xxx' >> ~/.hermes/.env"
   fi
-  export CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-$CF_ACCOUNT_ID_DEFAULT}"
-  log "Account ID: ${CLOUDFLARE_ACCOUNT_ID}"
+  # 账号 ID 同样不硬编码（见文件头常量说明）
+  [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]] || die "找不到 CLOUDFLARE_ACCOUNT_ID。请执行：echo 'CLOUDFLARE_ACCOUNT_ID=xxx' >> ~/.hermes/.env（CI 里用 GitHub Secrets）"
+  log "Account ID: ${CLOUDFLARE_ACCOUNT_ID:0:8}…（截断显示）"
 }
 
 # ---------- CF API ----------

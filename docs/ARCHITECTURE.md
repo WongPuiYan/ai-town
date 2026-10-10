@@ -552,7 +552,7 @@ Node      v24.14.0   npm 11.9.0   pnpm 10.30.2
 Python    3.11.15
 Go        ✗ 未安装（部署脚本会装）
 Docker    ✗ 未安装（本方案不需要）
-wrangler  4.99.0（CLOUDFLARE_API_TOKEN 已配置，账号 50a4fadd…）
+wrangler  4.99.0（CLOUDFLARE_API_TOKEN 已配置，账号 ID 见 `~/.hermes/.env`）
 cloudflared 已装，named tunnel <other-tunnel-uuid> → localhost:7360 (peer-service)
 在跑服务  peer-gateway / peer-service / cloudflared-peer
           / actions.runner.other-repo-runner / sub-proxy(3X-UI) / tailscaled / fail2ban

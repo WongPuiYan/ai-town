@@ -34,9 +34,13 @@ sync_url() {
         [[ -x "$d/npx" ]] && export PATH="$d:$PATH" && break
       done
     fi
-    # systemd 拉起的进程没有 CF 凭据：只挑这两行加载，不整文件 source
-    export CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-<cf-account-id>}"
+    # systemd 拉起的进程没有 CF 凭据：只挑这两行加载，不整文件 source。
+    # 账号 ID / Token 都放 ~/.hermes/.env（不进版本库；CI 里走 GitHub Secrets）。
     set -a; source <(grep -E '^(CLOUDFLARE_API_TOKEN|CLOUDFLARE_ACCOUNT_ID)=' "${HOME}/.hermes/.env" 2>/dev/null); set +a
+    if [[ -z "${CLOUDFLARE_ACCOUNT_ID:-}" || -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+      echo "[$LOG_TAG] 缺少 CF 凭据（CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN 应在 ~/.hermes/.env）→ 跳过 Worker 重部署"
+      return
+    fi
     REDEPLOY_LOG="$(dirname "$0")/worker-redeploy.log"
     (cd "$(dirname "$0")/../edge" && npx wrangler deploy --config wrangler.toml --name aitown-edge >>"$REDEPLOY_LOG" 2>&1) \
       && echo "[$LOG_TAG] Worker 已重新部署" \
