@@ -1,0 +1,38 @@
+name = "aitown-edge"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+# 需要 nodejs_compat 才能用部分 Node API
+compatibility_flags = ["nodejs_compat"]
+
+# ⚠️ 真实文件 edge/wrangler.toml 不进版本库 —— 它由 ./deploy/02-edge-deploy.sh
+#    codegen（写真实 D1/KV ID），并由隧道漂移自愈逻辑 sed 更新 ENGINE_ORIGIN。
+#    本文件只是模板，clone 后跑一遍部署链会自动生成真文件。
+
+# ── 静态配置（只读）──────────────────────────────────────
+[vars]
+VECTOR_BACKEND = "local"
+EMBED_DIMS     = "1024"
+EMBED_MODEL    = "@cf/baai/bge-m3"
+# 引擎隧道地址 —— 有固定域名就写死；用 quick tunnel 则由 05-tunnel-setup.sh 自动同步
+ENGINE_ORIGIN  = "https://<你的隧道>.trycloudflare.com"
+# 🩸 铁律：前端只允许走 WebSocket，禁止改成轮询。
+#    依据（官方 pricing）：WS 消息经 Worker 转发【不计入】请求数。
+#    1 秒轮询 = 86,400 请求/天/观众 → 100,000/天 的免费额度只够 1.1 个观众。
+MAX_DAILY_AI_CALLS = "500"
+
+# ── 绑定（ID 由 01-cf-resources.sh 建库后写入 state）────────────────
+[[d1_databases]]
+binding       = "SHADOW_DB"
+database_name = "aitown-shadow"
+database_id   = "<D1_UUID，见 deploy/.state.env>"
+
+[[kv_namespaces]]
+binding = "CONFIG_KV"
+id      = "<KV_ID，见 deploy/.state.env>"
+
+# R2 未开通：不写 [[r2_buckets]]（空 bucket_name 会让 wrangler deploy 报错）
+
+# v1.1: 不再绑定 Vectorize —— 检索在引擎本地做（架构 §5.4.2）
+
+[ai]
+binding = "AI"

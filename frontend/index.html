@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-Hans">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Town — M1 心跳</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0d1117;
+        --panel: #161b22;
+        --line: #30363d;
+        --text: #e6edf3;
+        --dim: #8b949e;
+        --ok: #3fb950;
+        --warn: #d29922;
+        --bad: #f85149;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.5 -apple-system, "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 10px 16px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+        flex-wrap: wrap;
+      }
+      h1 { font-size: 15px; margin: 0; font-weight: 600; }
+      .chip {
+        font-size: 12px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        color: var(--dim);
+        white-space: nowrap;
+      }
+      .chip b { color: var(--text); font-weight: 600; }
+      #status[data-state="open"] { color: var(--ok); border-color: #238636; }
+      #status[data-state="connecting"] { color: var(--warn); border-color: #9e6a03; }
+      #status[data-state="closed"] { color: var(--bad); border-color: #da3633; }
+      #status[data-state="limited"] { color: #a371f7; border-color: #8957e5; }
+      main { flex: 1; display: flex; gap: 12px; padding: 12px; align-items: flex-start; flex-wrap: wrap; }
+      #stage { background: #0b1020; border: 1px solid var(--line); border-radius: 8px; }
+      aside { width: 300px; display: flex; flex-direction: column; gap: 8px; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+      section h2 { font-size: 12px; margin: 0 0 6px; color: var(--dim); font-weight: 600; letter-spacing: 0.04em; }
+      #log { list-style: none; margin: 0; padding: 0; font-size: 12px; color: var(--dim); max-height: 240px; overflow: auto; }
+      #log li { padding: 2px 0; border-bottom: 1px dashed #21262d; }
+      #log li:last-child { border-bottom: none; }
+      kbd { background: #21262d; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-size: 11px; }
+      footer { padding: 8px 16px; color: var(--dim); font-size: 12px; border-top: 1px solid var(--line); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>AI Town · M1 心跳</h1>
+      <span class="chip">连接 <b id="status" data-state="connecting">连接中…</b></span>
+      <span class="chip">第 <b id="tick">0</b> 拍</span>
+      <span class="chip">游戏日 <b id="day">0</b> · <b id="clock">00:00</b></span>
+      <span class="chip">居民 <b id="agents">0</b></span>
+      <span class="chip">帧龄 <b id="age">–</b></span>
+      <span class="chip">重连 <b id="reconnects">0</b> 次</span>
+    </header>
+    <main>
+      <canvas id="stage" width="768" height="768"></canvas>
+      <aside>
+        <section>
+          <h2>最近事件</h2>
+          <ul id="log"></ul>
+        </section>
+        <section>
+          <h2>验收清单（M1）</h2>
+          <div style="font-size: 12px; color: var(--dim)">
+            8 个点持续移动 · 画面平滑 · 断线后自动重连（<kbd>Ctrl+C</kbd> 杀掉引擎试试）
+          </div>
+        </section>
+      </aside>
+    </main>
+    <footer>数据只走 WebSocket（禁轮询）· 引擎本地落 SQLite · 本页无任何定时 HTTP 请求</footer>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

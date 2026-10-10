@@ -1,0 +1,4 @@
+# 故意留空：给 aitown 的 quick tunnel 用的独立配置。
+# 绝不能让它去读 ~/.cloudflared/config.yml —— 那个文件的 ingress 会把
+# 所有 hostname 转发到 127.0.0.1:7360（peer-service），quick tunnel 的
+# --url 参数会被它覆盖（2026-10-10 实测踩到）。

@@ -1,0 +1,113 @@
+name: deploy-ai-town
+
+# 为什么用 self-hosted runner 而不是 SSH：
+# 云服务商安全组 + 云镜对「外部 SSH 登录」会触发安全告警，
+# 用 self-hosted runner 让服务器主动拉取任务，完全不暴露登录入口。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'engine/**'
+      - 'edge/**'
+      - 'frontend/**'
+      - 'deploy/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: '部署目标'
+        required: true
+        default: all
+        type: choice
+        options: [all, engine, edge, frontend]
+
+concurrency:
+  group: aitown-deploy
+  cancel-in-progress: false   # 部署不能被打断
+
+jobs:
+  # ═══════════════════════════════════════════ 服务器侧：引擎
+  engine:
+    if: >-
+      github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'engine')
+      || github.event_name == 'push'
+    runs-on: [self-hosted, aitown-engine]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 环境自检
+        run: ./deploy/00-preflight.sh
+
+      - name: 缓存 Go 模块
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ hashFiles('engine/go.sum') }}
+          restore-keys: go-
+
+      - name: 构建 + 重启引擎
+        run: ./deploy/03-engine-install.sh
+
+      - name: 健康检查
+        run: |
+          sleep 5
+          curl -fsS -m 10 http://127.0.0.1:8080/health
+          echo "引擎健康 ✓"
+
+      - name: 回归验证（确认同机服务未受影响）
+        run: |
+          for s in peer-gateway peer-service; do
+            systemctl is-active --quiet "$s" || { echo "::error::$s 挂了"; exit 1; }
+          done
+          echo "同机服务正常 ✓"
+
+      - name: 失败时贴日志
+        if: failure()
+        run: sudo journalctl -u aitown-engine -n 60 --no-pager
+
+  # ═══════════════════════════════════════════ Cloudflare 侧：edge + 前端
+  cloudflare:
+    if: >-
+      github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'edge' || inputs.target == 'frontend')
+      || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: cloudflare      # 在 GitHub Environment 里配 secrets，可加人工审批
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 部署 edge 网关
+        if: >-
+          github.event_name == 'push'
+          || inputs.target == 'all' || inputs.target == 'edge'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: ./deploy/02-edge-deploy.sh
+
+      - name: 部署前端
+        if: >-
+          github.event_name == 'push'
+          || inputs.target == 'all' || inputs.target == 'frontend'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: ./deploy/04-frontend-deploy.sh
+
+  # ═══════════════════════════════════════════ 每日额度预警
+  quota:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 检查免费额度
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: ./deploy/quota-check.sh

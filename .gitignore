@@ -1,0 +1,46 @@
+# 状态文件（含资源 ID，机器相关）
+.state.env
+deploy/.state.env
+
+# codegen 产物 / 运行日志（含真实 D1/KV ID 与账号信息，不进版本库）
+edge/wrangler.toml
+edge/wrangler.toml.local
+deploy/worker-redeploy.log
+*.log
+
+# 引擎运行时
+data/
+bin/
+logs/
+*.db
+*.db-wal
+*.db-shm
+
+# 环境与密钥
+.env
+.env.*
+!.env.example
+engine.env
+*.pem
+*.key
+
+# Node
+node_modules/
+dist/
+build/
+out/
+.wrangler/
+.dev.vars
+
+# Go
+vendor/
+
+# 编辑器 / 系统
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+.dev.vars*
+!.dev.vars.example
